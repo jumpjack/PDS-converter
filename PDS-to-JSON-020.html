@@ -8,8 +8,7 @@
 <h1>PDS label converter</h1>
   Converts .lbl labels containing fileds descriptions of .tab files.
   <br>Example: <a href="https://pds-imaging.jpl.nasa.gov/data/mer/spirit/mer2po_0xxx/index/edrindex.lbl">.lbl</a> (28 KB),
-  <a href="https://pds-imaging.jpl.nasa.gov/data/mer/spirit/mer2po_0xxx/index/edrindex.tab">.tab</a> (181 MB)<br>
-Source code is <a href="https://github.com/jumpjack/PDS-converter">here</a>.<br><br>
+  <a href="https://pds-imaging.jpl.nasa.gov/data/mer/spirit/mer2po_0xxx/index/edrindex.tab">.tab</a> (181 MB)<br><br>
 	You can load a local file<input type="file" id="inpFile" width="100" accept="lbl"><br>
   or <br>
 	past file contents here below and click PROCESS:<br>
@@ -24,10 +23,10 @@ Source code is <a href="https://github.com/jumpjack/PDS-converter">here</a>.<br>
   File contents as fields list:<br>
   <span id="output_list" name="output_list"></span><br>
 <br>
+Source code is <a href="https://github.com/jumpjack/PDS-converter">here</a>.<br>
 
 	<script>
 
-// 0.3.0: Fixed table and nested objects
 // 0.2.0: Working with any label, but to re-implement table management
 // 0.1.0: Works only with mars pathfinder table labels
 
@@ -37,9 +36,6 @@ Source code is <a href="https://github.com/jumpjack/PDS-converter">here</a>.<br>
   labelObj = {};
   objCount = 0;
   EQUALPOS = 0;
-  objectTable = [];
-  colNum = 0;
-  tablePresent = false;
 
 	function loadFile(fileHandler) {
 		// The file is read as ArrayBuffer to keep contents raw, without interpretations from Javascript engine
@@ -87,45 +83,30 @@ Source code is <a href="https://github.com/jumpjack/PDS-converter">here</a>.<br>
 
 
   function getObject(arr) {
+console.log("ARR=",arr, idx, arr[idx]);
     var JSONobject = {};
-    var currentLine = arr[idx].split("\"").join(""); // Remove quotes before adding
+    currentLine = arr[idx].split("\"").join(""); // Remove quotes before adding
 
     while ((currentLine.indexOf("END_OBJECT") < 0) && (currentLine != "END") ){ // Repeat until object or label ends.
+console.log(idx, arr.length,  currentLine);
       if (currentLine != "") {
-        if (currentLine.indexOf("PDS_VERSION_ID") === 0 ) {
+        if (currentLine.indexOf("PDS_VERSION_ID" === 0 )) {
           EQUALPOS = currentLine.indexOf("="); // First line defines the position of all "=" signs in the label.
         }
 
         // Sub-object found, process recursively
         if ((currentLine.indexOf("OBJECT") >= 0) && (currentLine.indexOf("END_OBJECT") < 0)) {
-          var objName = currentLine.substring(EQUALPOS+2,currentLine.length);
-          if (objName.indexOf("TABLE") >= 0) {
-            tablePresent = true;
-          }
+          objType = currentLine.substring(28,currentLine.length);
           objCount++;
           idx++;
-          var obj = getObject(arr);
-          obj["NAME_"] = objName;
-          if (tablePresent) {
-            if (obj.NAME_ == "COLUMN") {
-              colNum++;
-              // Add object column to object table:
-              obj.COLUMN_NUMBER_ = colNum;
-              objectTable.push(obj);
-              JSONobject["OBJECT_" + objCount+ "_" + objName] = obj;
-            } else {
-              // Add generic object to main object
-              JSONobject["OBJECT_" + objCount+ "_" + objName] = obj;
-            }
-          } else {
-            JSONobject["OBJECT_" + objCount + "_" + objName] = obj;
-          }
+          obj = getObject(arr);
+          JSONobject["OBJECT_" + objCount] = obj;
         }
 
         // Object generic line
         if ((currentLine.indexOf("OBJECT") < 0) && (currentLine.indexOf("END_OBJECT") < 0) &&  (currentLine != "END")) {
-          var key = currentLine.substr(0,EQUALPOS);
-          var value = currentLine.substring(EQUALPOS+2,currentLine.length);
+          key = currentLine.substr(0,EQUALPOS-1);
+          value = currentLine.substring(EQUALPOS+1,currentLine.length);
           if (key) key = key.trim();
           if (value) value = value.trim();
           JSONobject[key] = value;
@@ -147,7 +128,6 @@ Source code is <a href="https://github.com/jumpjack/PDS-converter">here</a>.<br>
 
     if (currentLine == "END") {
       console.log("File end.");
-      JSONobject["table"] = objectTable;
       return JSONobject;
     }
   }
@@ -169,18 +149,14 @@ Source code is <a href="https://github.com/jumpjack/PDS-converter">here</a>.<br>
 	}
 
 function setTableHeader(TABLE) {
-  addLine(TABLE,"Colum number", "Colum number alt", "Field name", "Field description");
+  addLine(TABLE,"Colum number", "Field name", "Field description");
   return TABLE;
 }
 
-function addLine(TABLE, COLUMN_NUMBER, COLUMN_NUMBER_ALT, NAME, DESCRIPTION) {
+function addLine(TABLE, COLUMN_NUMBER, NAME, DESCRIPTION) {
   TR = document.createElement("TR");
   TD = document.createElement("TD");
   TD.innerHTML = COLUMN_NUMBER;
-  TR.appendChild(TD);
-  TABLE.appendChild(TR);
-  TD = document.createElement("TD");
-  TD.innerHTML = COLUMN_NUMBER_ALT;
   TR.appendChild(TD);
   TABLE.appendChild(TR);
   TD = document.createElement("TD");
@@ -194,12 +170,7 @@ function addLine(TABLE, COLUMN_NUMBER, COLUMN_NUMBER_ALT, NAME, DESCRIPTION) {
 }
 
 function processLabel(label) {
-        tablePresent = false;
-        JSONobject = {};
-        objectTable = [];
-        objCount = 0;
         output.value = "";
-        colNum = 0;
         output_list.innerHTML = "";
         // Determine which linefeed code is in use:
         if (label.indexOf("\n\n")>=0) { // objects are separated by double linefeed
@@ -214,21 +185,15 @@ function processLabel(label) {
         labelObj = getObject(newLabelArr,0);
         console.log(labelObj);
         output.value = "";
-
-        if (labelObj.table.length > 0 ) {
-          TABLE = setTableHeader(document.createElement("TABLE"));
-          TABLE.setAttribute("border", "1");
-          labelObj.table.forEach( (obj) => {
-  //console.log(obj.COLUMN_NUMBER, obj.NAME, obj.DESCRIPTION);
-            if (obj.NAME != undefined) {
-              output.value += obj.NAME + "\t";
-              addLine(TABLE, obj.COLUMN_NUMBER, obj.COLUMN_NUMBER_, obj.NAME, obj.DESCRIPTION)
-            }
-            output_list.appendChild(TABLE);
-          });
-      } else {
-        output.value = "No tables found in label";
-      }
+        TABLE = setTableHeader(document.createElement("TABLE"));
+/*        JSONobjects.forEach( (obj) => {
+//console.log(obj.COLUMN_NUMBER, obj.NAME, obj.DESCRIPTION);
+          if (obj.NAME != undefined) {
+            output.value += obj.NAME + "\t";
+            addLine(TABLE, obj.COLUMN_NUMBER, obj.NAME, obj.DESCRIPTION)
+          }
+          output_list.appendChild(TABLE);
+        });*
 }
 	</script>
 
